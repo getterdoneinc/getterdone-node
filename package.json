@@ -1,0 +1,41 @@
+{
+  "name": "@getterdone/sdk",
+  "version": "1.0.0",
+  "description": "Official Node.js / TypeScript SDK for the GetterDone Agent API",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "test": "vitest run",
+    "lint": "eslint src --ext .ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["ai", "agents", "tasks", "gig-economy", "mcp", "langchain", "getterdone"],
+  "author": "GetterDone Inc. <support@getterdone.ai>",
+  "license": "MIT",
+  "homepage": "https://getterdone.ai",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getterdoneinc/getterdone-node.git"
+  },
+  "bugs": {
+    "url": "https://github.com/getterdoneinc/getterdone-node/issues"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": { "node": ">=18" }
+}
