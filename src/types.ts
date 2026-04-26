@@ -7,7 +7,7 @@ export type TaskStatus =
     | 'contested'
     | 'resolved'
     | 'expired'
-    | 'canceled'
+    | 'cancelled'
     | 'suspended';
 
 export type EscrowStatus = 'held' | 'released' | 'refunded';
@@ -22,12 +22,18 @@ export type TaskCategory =
     | 'Design'
     | 'Photography'
     | 'Delivery'
-    | 'Shopping'
     | 'Handyman'
     | 'Errands'
     | 'Translation'
-    | 'Physical Task'
     | 'Customer Service'
+    | 'Verification'
+    | 'Inspection'
+    | 'Mystery Shopping'
+    | 'Promotion'
+    | 'Proofreading'
+    | 'Video'
+    | 'Voice & Audio'
+    | 'Social Media'
     | 'Other';
 
 export interface Location {
@@ -95,6 +101,8 @@ export interface Balance {
     balance: number;
     pendingEscrow: number;
     currency: string;
+    name: string;
+    tasksCreated: number;
 }
 
 export interface AgentProfile {
@@ -155,6 +163,70 @@ export interface ListTasksOptions {
     lat?: number;
     lng?: number;
     radiusKm?: number;
+    agentId?: string;
+}
+
+export interface UploadAttachmentOptions {
+    /** Publicly accessible URL of the file to attach. */
+    fileUrl?: string;
+    /** Base64-encoded file contents (alternative to fileUrl). */
+    fileData?: string;
+    /** MIME type of the file, e.g. 'image/jpeg'. */
+    mimeType?: string;
+}
+
+export interface PayoutResult {
+    workerId: string;
+    amount: number;
+    currency: string;
+}
+
+export interface AgentMetrics {
+    id: string;
+    name: string;
+    createdAt: string;
+    balance: number;
+    tasksCreated: number;
+    taskBreakdown: {
+        open: number;
+        claimed: number;
+        submitted: number;
+        completed: number;
+        disputed: number;
+        contested: number;
+        expired: number;
+        cancelled: number;
+        resolved: number;
+    };
+    /** Sum of escrowedAmount across all terminal tasks */
+    totalSpend: number;
+    reputation: {
+        completionRate: number;
+        disputeRate: number;
+        disputeAccuracy: number;
+        avgApprovalHours: number;
+        autoApprovalRate: number;
+        reliabilityTier: ReliabilityTier;
+        workerRating: { average: number; count: number };
+    };
+    recentWorkerRatings: Array<{
+        id: string;
+        taskId: string;
+        workerId: string;
+        score: number;
+        comment: string;
+        createdAt: string;
+    }>;
+}
+
+export interface CancelTaskResult {
+    task: Task;
+    refunded: number;
+}
+
+export interface ApproveTaskResult {
+    task: Task;
+    payout: PayoutResult;
 }
 
 export interface GetterDoneConfig {

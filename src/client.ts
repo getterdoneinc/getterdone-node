@@ -16,14 +16,21 @@
  * ```
  */
 
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import type {
+    AgentMetrics,
     AgentProfile,
+    ApproveTaskResult,
     Balance,
+    CancelTaskResult,
     CreateTaskOptions,
     GetterDoneConfig,
     ListTasksOptions,
+    PayoutResult,
     ReputationResult,
     Task,
+    TaskStatus,
+    UploadAttachmentOptions,
     WebhookConfig,
     WorkerProfile,
 } from './types.js';
@@ -47,10 +54,50 @@ export class AuthenticationError extends GetterDoneError {
     }
 }
 
+export interface FundingTokenSummary {
+    id: string;
+    amountUsd: number;
+    recurring: boolean;
+}
+
 export class InsufficientBalanceError extends GetterDoneError {
-    constructor(message: string) {
+    /** USD the task required (reward + platform fee). Undefined on older backends. */
+    public readonly needed?: number;
+    /** USD available in the wallet at the moment of the atomic check. Undefined on older backends. */
+    public readonly available?: number;
+    /**
+     * When the wallet is short but an active funding token authorises the card,
+     * this carries the token summary so callers can call `fundAccount(amount)`
+     * to draw from it without re-querying the server.
+     */
+    public readonly fundingToken?: FundingTokenSummary;
+
+    constructor(
+        message: string,
+        details?: {
+            needed?: number;
+            available?: number;
+            fundingToken?: FundingTokenSummary;
+        },
+    ) {
         super(message, 402);
         this.name = 'InsufficientBalanceError';
+        this.needed = details?.needed;
+        this.available = details?.available;
+        this.fundingToken = details?.fundingToken;
+    }
+
+    /**
+     * Recommended amount to draw from the funding token to cover the shortfall,
+     * clamped to the token's authorisation and the $1.00 minimum.
+     * Returns null when auto-funding isn't possible (no token, missing fields,
+     * or shortfall below the minimum).
+     */
+    recommendedDrawAmount(): number | null {
+        if (!this.fundingToken || this.needed == null || this.available == null) return null;
+        const shortfall = this.needed - this.available;
+        const draw = Math.min(shortfall, this.fundingToken.amountUsd);
+        return draw >= 1 ? draw : null;
     }
 }
 
@@ -70,16 +117,19 @@ export class TaskNotFoundError extends GetterDoneError {
     }
 }
 
-export class AgentNameTakenError extends GetterDoneError {
+export class ConflictError extends GetterDoneError {
     constructor(message: string) {
         super(message, 409);
-        this.name = 'AgentNameTakenError';
+        this.name = 'ConflictError';
     }
 }
 
+/** @deprecated Use ConflictError instead. */
+export const AgentNameTakenError = ConflictError;
+
 export class TaskStateError extends GetterDoneError {
-    constructor(message: string) {
-        super(message, 422);
+    constructor(message: string, statusCode = 422) {
+        super(message, statusCode);
         this.name = 'TaskStateError';
     }
 }
@@ -135,7 +185,7 @@ export class GetterDone {
 
     private async getToken(): Promise<string> {
         const now = Date.now();
-        if (this.tokenCache && now < this.tokenCache.expiresAt - 60_000) {
+        if (this.tokenCache && now < this.tokenCache.expiresAt - 120_000) {
             return this.tokenCache.token;
         }
 
@@ -162,7 +212,8 @@ export class GetterDone {
         path: string,
         body?: unknown,
         authenticated = true,
-        params?: Record<string, string | number | undefined>
+        params?: Record<string, string | number | undefined>,
+        retried = false
     ): Promise<T> {
         let url = `${this.baseUrl}${path}`;
         if (params) {
@@ -195,6 +246,12 @@ export class GetterDone {
             clearTimeout(timer);
         }
 
+        // On 401, clear the token cache and retry once with a fresh token
+        if (response.status === 401 && authenticated && !retried) {
+            this.tokenCache = null;
+            return this.request<T>(method, path, body, authenticated, params, true);
+        }
+
         const text = await response.text();
         const json = text ? JSON.parse(text) : {};
 
@@ -203,13 +260,27 @@ export class GetterDone {
 
             switch (response.status) {
                 case 401: throw new AuthenticationError(msg);
-                case 402:
+                case 402: {
+                    // Prefer the structured `code` field; fall back to legacy
+                    // string-matching for older backends that don't emit it.
+                    const details = {
+                        needed: typeof json?.needed === 'number' ? json.needed : undefined,
+                        available: typeof json?.available === 'number' ? json.available : undefined,
+                        fundingToken: json?.fundingToken,
+                    };
+                    if (json?.code === 'INSUFFICIENT_BALANCE_FUNDABLE') {
+                        throw new InsufficientBalanceError(msg, details);
+                    }
                     if (msg.toLowerCase().includes('funding')) {
                         throw new FundingRequiredError(msg, json?.onboardingUrl);
                     }
-                    throw new InsufficientBalanceError(msg);
+                    throw new InsufficientBalanceError(msg, details);
+                }
                 case 404: throw new TaskNotFoundError(msg);
-                case 409: throw new AgentNameTakenError(msg);
+                case 409:
+                    if (/cannot cancel|no escrow|cancel/i.test(msg)) throw new TaskStateError(msg, 409);
+                    if (/name|taken|already/i.test(msg)) throw new ConflictError(msg);
+                    throw new TaskStateError(msg, 409); // safe default
                 case 410: throw new RatingWindowClosedError(msg);
                 case 422: throw new TaskStateError(msg);
                 default: throw new GetterDoneError(msg, response.status);
@@ -247,9 +318,9 @@ export class GetterDone {
     }
 
     /** Get comprehensive agent metrics. */
-    async getMetrics(agentId?: string): Promise<unknown> {
+    async getMetrics(agentId?: string): Promise<AgentMetrics> {
         const id = agentId ?? (await this.getMe()).id;
-        return this.request('GET', `/api/agents/${id}/metrics`);
+        return this.request<AgentMetrics>('GET', `/api/agents/${id}/metrics`);
     }
 
     /** Configure a webhook URL for real-time task events. */
@@ -278,13 +349,13 @@ export class GetterDone {
 
     /** List tasks with optional filters. */
     async listTasks(options: ListTasksOptions = {}): Promise<Task[]> {
-        const { status, category, limit = 50, q, lat, lng, radiusKm } = options;
+        const { status, category, limit = 50, q, lat, lng, radiusKm, agentId } = options;
         return this.request<Task[]>(
             'GET',
             '/api/tasks',
             undefined,
-            false,
-            { status, category, limit, q, lat, lng, radiusKm } as Record<
+            true,
+            { status, category, limit, q, lat, lng, radiusKm, agentId } as Record<
                 string,
                 string | number | undefined
             >
@@ -293,16 +364,36 @@ export class GetterDone {
 
     /** Get full task details, including proof of work and authenticity check. */
     async getTask(taskId: string): Promise<Task> {
-        return this.request<Task>('GET', `/api/tasks/${taskId}`, undefined, false);
+        return this.request<Task>('GET', `/api/tasks/${taskId}`, undefined, true);
     }
 
     /**
      * Approve a submitted task and release payment to the worker.
      *
      * **Irreversible.** Present proofOfWork to the user before calling this.
+     *
+     * Returns `{ task, payout }` — use `result.task.status` to confirm the
+     * task is `'completed'` and `result.payout` for the `PayoutResult`
+     * (`{ workerId, amount, currency }`).
+     *
+     * If the first attempt returns 402 (insufficient balance or funding required),
+     * the call is retried exactly once after a 1 000 ms delay — the operation is
+     * idempotent so a double-submit is safe. If the retry also fails with 402, the
+     * appropriate `InsufficientBalanceError` or `FundingRequiredError` is thrown.
+     *
+     * @returns `{ task: Task, payout: PayoutResult }` where `payout` contains
+     *   `workerId` (string), `amount` (number, USD), and `currency` (string).
      */
-    async approveTask(taskId: string): Promise<{ task: Task; payout: unknown }> {
-        return this.request('POST', `/api/tasks/${taskId}/complete`);
+    async approveTask(taskId: string): Promise<ApproveTaskResult> {
+        try {
+            return await this.request<ApproveTaskResult>('POST', `/api/tasks/${taskId}/complete`);
+        } catch (err) {
+            if (err instanceof GetterDoneError && err.statusCode === 402) {
+                await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+                return this.request<ApproveTaskResult>('POST', `/api/tasks/${taskId}/complete`);
+            }
+            throw err;
+        }
     }
 
     /**
@@ -317,10 +408,15 @@ export class GetterDone {
     /**
      * Cancel an open task and refund all escrowed funds.
      *
-     * Only tasks in `open` status (not yet claimed) can be canceled.
+     * Only tasks in `open` status (not yet claimed) can be cancelled.
+     *
+     * Returns `{ task, refunded }` — use `result.task.status` to confirm
+     * the task is `'cancelled'` and `result.refunded` for the refund amount.
+     *
+     * @throws {TaskStateError} if the task is not in a cancellable status (e.g., already claimed or completed)
      */
-    async cancelTask(taskId: string): Promise<Task> {
-        return this.request<Task>('POST', `/api/tasks/${taskId}/cancel`);
+    async cancelTask(taskId: string): Promise<CancelTaskResult> {
+        return this.request<CancelTaskResult>('POST', `/api/tasks/${taskId}/cancel`);
     }
 
     /**
@@ -338,6 +434,92 @@ export class GetterDone {
         });
     }
 
+    /**
+     * Upload a file attachment to a task.
+     *
+     * Supply either `fileUrl` (a publicly accessible URL) or `fileData`
+     * (Base64-encoded file contents). Use `mimeType` to indicate the content
+     * type (e.g. `'image/jpeg'`).
+     */
+    async uploadAttachment(
+        taskId: string,
+        filename: string,
+        options: UploadAttachmentOptions = {}
+    ): Promise<{ attachmentId: string }> {
+        return this.request<{ attachmentId: string }>(
+            'POST',
+            `/api/tasks/${taskId}/attachments`,
+            { filename, ...options }
+        );
+    }
+
+    /**
+     * Fetch all tasks in `submitted` status awaiting agent review.
+     *
+     * This is the **canonical polling endpoint** for the agent review queue.
+     * Each task in the response includes `criteriaCheckResult` and
+     * `imageAuthenticityResult` inline — no extra `getTask` calls are needed.
+     *
+     * @example
+     * ```ts
+     * const pending = await gd.getPendingReviews();
+     * for (const task of pending) {
+     *   if (task.criteriaCheckResult?.passed) {
+     *     await gd.approveTask(task.id);
+     *   }
+     * }
+     * ```
+     */
+    async getPendingReviews(): Promise<Task[]> {
+        return this.request<Task[]>(
+            'GET',
+            '/api/tasks',
+            undefined,
+            true,
+            { status: 'submitted', limit: 50 } as Record<string, string | number | undefined>
+        );
+    }
+
+    /**
+     * Poll `getTask` until the task reaches `targetStatus` or the timeout elapses.
+     *
+     * **Warning:** Do not pass `pollMs` lower than `5000` in production — the API
+     * enforces rate limits. The defaults (5 s poll / 5 min timeout) are sensible
+     * for most workflows.
+     *
+     * @param taskId      - The task to watch.
+     * @param targetStatus - The status to wait for.
+     * @param options.pollMs    - Milliseconds between polls. Default: 5000.
+     * @param options.timeoutMs - Maximum wait time in ms. Default: 300000 (5 min).
+     *
+     * @throws {GetterDoneError} with message `'Timed out waiting for status'` if
+     *   `targetStatus` is not reached within `timeoutMs`.
+     */
+    async waitForStatus(
+        taskId: string,
+        targetStatus: TaskStatus,
+        options?: { pollMs?: number; timeoutMs?: number }
+    ): Promise<Task> {
+        const pollMs = options?.pollMs ?? 5000;
+        const timeoutMs = options?.timeoutMs ?? 300_000;
+        const startTime = Date.now();
+
+        for (;;) {
+            const task = await this.getTask(taskId);
+            if (task.status === targetStatus) {
+                return task;
+            }
+            const elapsed = Date.now() - startTime;
+            if (elapsed >= timeoutMs) {
+                throw new GetterDoneError('Timed out waiting for status');
+            }
+            const remaining = timeoutMs - elapsed;
+            await new Promise<void>((resolve) =>
+                setTimeout(resolve, Math.min(pollMs, remaining))
+            );
+        }
+    }
+
     // ─── Workers ──────────────────────────────────────────────────────────────
 
     /** Get a worker's public trust tier, rating, and task history. */
@@ -352,12 +534,14 @@ export class GetterDone {
 
     // ─── Platform ────────────────────────────────────────────────────────────
 
-    /** Submit a bug report or feature request. */
+    /** Submit a bug report, feature request, or general feedback. */
     async reportIssue(
-        message: string,
-        type: 'bug' | 'feature' | 'other' = 'other'
+        type: 'bug' | 'feature_request' | 'general',
+        title: string,
+        description: string,
+        severity?: 'low' | 'medium' | 'high' | 'critical'
     ): Promise<void> {
-        await this.request('POST', '/api/platform/feedback', { type, message });
+        await this.request('POST', '/api/platform/feedback', { type, title, description, severity });
     }
 
     // ─── Convenience ─────────────────────────────────────────────────────────
@@ -372,5 +556,59 @@ export class GetterDone {
             { q: name }
         );
         return result.available;
+    }
+}
+
+// ─── Standalone utility ───────────────────────────────────────────────────────
+
+/**
+ * Verify a webhook signature sent by the GetterDone platform.
+ *
+ * The platform sets an `X-GetterDone-Signature` header of the form
+ * `sha256=<hex>`. Pass the raw request body string, the full header value, and
+ * the webhook secret from your agent config.
+ *
+ * Uses `timingSafeEqual` internally to prevent timing attacks.
+ *
+ * @example
+ * ```ts
+ * import { verifyWebhookSignature } from '@getterdone/sdk';
+ *
+ * app.post('/webhook', (req, res) => {
+ *   const valid = verifyWebhookSignature(
+ *     req.rawBody,
+ *     req.headers['x-getterdone-signature'],
+ *     process.env.WEBHOOK_SECRET,
+ *   );
+ *   if (!valid) return res.sendStatus(401);
+ *   // process event …
+ * });
+ * ```
+ *
+ * @param rawBody         - The raw (unparsed) request body as a UTF-8 string.
+ * @param signatureHeader - The full `X-GetterDone-Signature` header value.
+ * @param secret          - Your webhook secret.
+ * @returns `true` if the signature is valid, `false` otherwise.
+ */
+export function verifyWebhookSignature(
+    rawBody: string,
+    signatureHeader: string,
+    secret: string
+): boolean {
+    const PREFIX = 'sha256=';
+    if (!signatureHeader.startsWith(PREFIX)) {
+        return false;
+    }
+    const receivedHex = signatureHeader.slice(PREFIX.length);
+    const expectedHex = createHmac('sha256', secret).update(rawBody).digest('hex');
+
+    try {
+        return timingSafeEqual(
+            Buffer.from(receivedHex, 'hex'),
+            Buffer.from(expectedHex, 'hex')
+        );
+    } catch {
+        // timingSafeEqual throws if buffers have different lengths (malformed hex)
+        return false;
     }
 }

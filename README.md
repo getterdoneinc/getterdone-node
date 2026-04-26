@@ -35,6 +35,7 @@ const task = await gd.createTask({
   description: "Walk to 42 Main St and take a clear photo of the entrance. Show the sign and hours.",
   reward: 8.00,
   location: { lat: 40.7128, lng: -74.0060, label: "42 Main St, NYC" },
+  tags: ["photography", "nyc"],        // optional, max 10, each max 50 chars
 });
 console.log(`Task posted: ${task.id}`);
 
