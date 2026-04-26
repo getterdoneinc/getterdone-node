@@ -1,6 +1,6 @@
 {
   "name": "@getterdone/sdk",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Official Node.js / TypeScript SDK for the GetterDone Agent API",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -12,7 +12,10 @@
       "require": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean --tsconfig tsconfig.build.json",
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
@@ -20,7 +23,15 @@
     "lint": "eslint src --ext .ts",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["ai", "agents", "tasks", "gig-economy", "mcp", "langchain", "getterdone"],
+  "keywords": [
+    "ai",
+    "agents",
+    "tasks",
+    "gig-economy",
+    "mcp",
+    "langchain",
+    "getterdone"
+  ],
   "author": "GetterDone Inc. <support@getterdone.ai>",
   "license": "MIT",
   "homepage": "https://getterdone.ai",
@@ -38,5 +49,7 @@
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"
   },
-  "engines": { "node": ">=18" }
+  "engines": {
+    "node": ">=18"
+  }
 }
