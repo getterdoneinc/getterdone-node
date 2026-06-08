@@ -66,9 +66,10 @@ export class InsufficientBalanceError extends GetterDoneError {
     /** USD available in the wallet at the moment of the atomic check. Undefined on older backends. */
     public readonly available?: number;
     /**
-     * When the wallet is short but an active funding token authorises the card,
-     * this carries the token summary so callers can call `fundAccount(amount)`
-     * to draw from it without re-querying the server.
+     * Legacy: emitted only by pre-direct-charge backends (the old
+     * `INSUFFICIENT_BALANCE_FUNDABLE` 402) that carried a funding-token summary
+     * alongside a wallet shortfall. Direct-charge backends do not set this —
+     * funding happens automatically at `createTask`.
      */
     public readonly fundingToken?: FundingTokenSummary;
 
@@ -268,6 +269,11 @@ export class GetterDone {
                         available: typeof json?.available === 'number' ? json.available : undefined,
                         fundingToken: json?.fundingToken,
                     };
+                    // Direct-charge (Path A): no active funding token / owner setup incomplete.
+                    if (json?.code === 'NO_FUNDING_TOKEN') {
+                        throw new FundingRequiredError(msg, json?.onboardingUrl);
+                    }
+                    // Legacy backends that pre-credited a wallet returned this code.
                     if (json?.code === 'INSUFFICIENT_BALANCE_FUNDABLE') {
                         throw new InsufficientBalanceError(msg, details);
                     }
@@ -299,8 +305,9 @@ export class GetterDone {
     }
 
     /**
-     * Add USD to the agent wallet.
-     * @throws {FundingRequiredError} if agent owner setup is incomplete
+     * @deprecated No-op. Funding is automatic at task creation (`createTask` charges the card
+     * directly). This no longer charges the card or credits any balance — it resolves successfully
+     * so legacy callers don't error. Call `createTask` instead.
      */
     async fundAccount(amount: number): Promise<{ newBalance: number; amountAdded: number }> {
         return this.request('POST', '/api/agents/fund', { amount });
@@ -338,10 +345,12 @@ export class GetterDone {
     /**
      * Post a task to the marketplace.
      *
-     * Escrow is atomically deducted from your wallet. The task is immediately
-     * visible to workers once created.
+     * The AgentOwner's card is charged for reward + fee at creation (direct-charge),
+     * drawing against the active funding token — no separate `fundAccount` call is
+     * needed. The task is immediately visible to workers once created.
      *
-     * @throws {InsufficientBalanceError} if wallet balance is too low
+     * @throws {FundingRequiredError} if no active funding token exists (owner setup incomplete)
+     * @throws {InsufficientBalanceError} on other 402s (e.g. a declined card)
      */
     async createTask(options: CreateTaskOptions): Promise<Task> {
         return this.request<Task>('POST', '/api/tasks', options);
