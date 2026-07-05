@@ -18,6 +18,7 @@ import {
     GetterDoneError,
     InsufficientBalanceError,
     FundingRequiredError,
+    TaskLimitError,
     verifyWebhookSignature,
 } from '../client.js';
 
@@ -217,6 +218,60 @@ describe('ConflictError (409)', () => {
         }
 
         expect((thrown as ConflictError).statusCode).toBe(409);
+    });
+});
+
+// ─── createTask task-count caps (429) ─────────────────────────────────────────
+
+describe('GetterDone.createTask() task-count caps', () => {
+    let gd: GetterDone;
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+        fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        gd = new GetterDone({ apiKey: 'gd_testid:testsecret', baseUrl: 'https://test.example' });
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    const opts = {
+        title: 'A valid task title',
+        description: 'A description that is comfortably over twenty characters.',
+        reward: 5,
+        location: { lat: 0, lng: 0, label: 'Remote', remote: true },
+    };
+
+    it('maps a 429 OPEN_TASK_LIMIT to TaskLimitError with the code', async () => {
+        fetchMock
+            .mockResolvedValueOnce(makeTokenResponse())
+            .mockResolvedValueOnce(makeResponse({ error: 'Open-task limit reached', code: 'OPEN_TASK_LIMIT' }, 429));
+
+        let thrown: unknown;
+        try { await gd.createTask(opts); } catch (e) { thrown = e; }
+        expect(thrown).toBeInstanceOf(TaskLimitError);
+        expect((thrown as TaskLimitError).code).toBe('OPEN_TASK_LIMIT');
+        expect((thrown as TaskLimitError).statusCode).toBe(429);
+        // Still a GetterDoneError, so existing catch blocks keep working.
+        expect(thrown).toBeInstanceOf(GetterDoneError);
+    });
+
+    it('maps a 429 TASK_CREATION_LIMIT to TaskLimitError', async () => {
+        fetchMock
+            .mockResolvedValueOnce(makeTokenResponse())
+            .mockResolvedValueOnce(makeResponse({ error: 'Task creation rate limit', code: 'TASK_CREATION_LIMIT' }, 429));
+
+        await expect(gd.createTask(opts)).rejects.toMatchObject({ code: 'TASK_CREATION_LIMIT' });
+    });
+
+    it('a generic 429 (no cap code) stays a plain GetterDoneError, not a TaskLimitError', async () => {
+        fetchMock
+            .mockResolvedValueOnce(makeTokenResponse())
+            .mockResolvedValueOnce(makeResponse({ error: 'Too many requests' }, 429));
+
+        let thrown: unknown;
+        try { await gd.createTask(opts); } catch (e) { thrown = e; }
+        expect(thrown).toBeInstanceOf(GetterDoneError);
+        expect(thrown).not.toBeInstanceOf(TaskLimitError);
     });
 });
 

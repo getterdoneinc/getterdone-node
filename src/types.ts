@@ -10,9 +10,9 @@ export type TaskStatus =
     | 'cancelled'
     | 'suspended';
 
-export type EscrowStatus = 'held' | 'released' | 'refunded';
+export type EscrowStatus = 'none' | 'held' | 'released' | 'refunded' | 'refund_pending';
 
-export type ReliabilityTier = 'excellent' | 'good' | 'fair' | 'poor';
+export type ReliabilityTier = 'excellent' | 'good' | 'caution' | 'unreliable' | 'new';
 
 export type TaskCategory =
     | 'General'
@@ -95,6 +95,8 @@ export interface Task {
     createdAt: string;
     deadline: string;
     claimedAt: string | null;
+    /** True once this task has ever entered dispute (immutable; survives resolution). */
+    wasDisputed?: boolean;
 }
 
 export interface Balance {
@@ -115,12 +117,21 @@ export interface AgentProfile {
 }
 
 export interface ReputationResult {
-    agentId: string;
-    reliabilityTier: ReliabilityTier;
-    composite: number;
-    completedTasks: number;
+    /** The agent's display name — added to the composite by the reputation route. */
+    agentName: string;
+    completionRate: number;
     disputeRate: number;
-    approvalRate: number;
+    disputeAccuracy: number;
+    /** Average hours from proof submission to the agent's approval, over recent tasks. */
+    avgApprovalHours: number;
+    /** Fraction of recent completions that were auto-approved (review window let lapse). */
+    autoApprovalRate: number;
+    workerRating: { average: number; count: number };
+    reliabilityTier: ReliabilityTier;
+    tasksCreated: number;
+    tasksCompleted: number;
+    /** Durable count of disputes an admin decided against this agent (worker paid). */
+    disputesLost: number;
 }
 
 export interface WorkerProfile {
@@ -208,6 +219,8 @@ export interface AgentMetrics {
         autoApprovalRate: number;
         reliabilityTier: ReliabilityTier;
         workerRating: { average: number; count: number };
+        /** Disputes an admin decided against this agent (worker paid). */
+        disputesLost: number;
     };
     recentWorkerRatings: Array<{
         id: string;

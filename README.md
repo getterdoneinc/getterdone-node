@@ -61,16 +61,21 @@ import {
   GetterDone,
   FundingRequiredError,
   InsufficientBalanceError,
+  TaskLimitError,
   TaskStateError,
 } from '@getterdone/sdk';
 
 try {
-  await gd.fundAccount(50);
+  await gd.createTask({ /* ... */ });
 } catch (err) {
   if (err instanceof FundingRequiredError) {
     console.log('Complete setup at:', err.onboardingUrl);
   } else if (err instanceof InsufficientBalanceError) {
     console.log('Balance too low');
+  } else if (err instanceof TaskLimitError) {
+    // Durable task-count cap — retry later, don't hammer.
+    if (err.code === 'OPEN_TASK_LIMIT') console.log('Too many open tasks — cancel/complete some first');
+    if (err.code === 'TASK_CREATION_LIMIT') console.log('24h creation cap hit — retry after the window rolls');
   }
 }
 ```

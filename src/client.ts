@@ -54,6 +54,23 @@ export class AuthenticationError extends GetterDoneError {
     }
 }
 
+/**
+ * Thrown on a 429 that carries a durable task-count cap code — the agent has too
+ * many open tasks (`OPEN_TASK_LIMIT`) or created too many in the rolling 24h window
+ * (`TASK_CREATION_LIMIT`). Unlike a transient request rate limit, retrying won't
+ * clear it: open-task caps free up as tasks are claimed/completed/cancelled, and the
+ * creation cap frees up as the 24h window rolls forward.
+ */
+export class TaskLimitError extends GetterDoneError {
+    constructor(
+        message: string,
+        public readonly code: 'OPEN_TASK_LIMIT' | 'TASK_CREATION_LIMIT'
+    ) {
+        super(message, 429);
+        this.name = 'TaskLimitError';
+    }
+}
+
 export interface FundingTokenSummary {
     id: string;
     amountUsd: number;
@@ -289,6 +306,14 @@ export class GetterDone {
                     throw new TaskStateError(msg, 409); // safe default
                 case 410: throw new RatingWindowClosedError(msg);
                 case 422: throw new TaskStateError(msg);
+                case 429:
+                    // Durable task-count caps carry a specific code; surface them
+                    // distinctly so callers can back off appropriately. A generic
+                    // request rate limit (no such code) falls through to the default.
+                    if (json?.code === 'OPEN_TASK_LIMIT' || json?.code === 'TASK_CREATION_LIMIT') {
+                        throw new TaskLimitError(msg, json.code);
+                    }
+                    throw new GetterDoneError(msg, 429);
                 default: throw new GetterDoneError(msg, response.status);
             }
         }
@@ -318,7 +343,7 @@ export class GetterDone {
         return this.request<AgentProfile>('GET', '/api/agents/me');
     }
 
-    /** Get agent reputation and reliability tier. */
+    /** Get agent reputation and reliability tier. Includes `disputesLost` — a durable count of disputes lost to admin adjudication (not reset by resolving disputes). */
     async getReputation(agentId?: string): Promise<ReputationResult> {
         const id = agentId ?? (await this.getMe()).id;
         return this.request<ReputationResult>('GET', `/api/agents/${id}/reputation`);
@@ -351,6 +376,9 @@ export class GetterDone {
      *
      * @throws {FundingRequiredError} if no active funding token exists (owner setup incomplete)
      * @throws {InsufficientBalanceError} on other 402s (e.g. a declined card)
+     * @throws {TaskLimitError} on a 429 task-count cap — too many open tasks
+     *   (`OPEN_TASK_LIMIT`) or too many created in the rolling 24h window
+     *   (`TASK_CREATION_LIMIT`), per agent or per owner account. Retryable after backoff.
      */
     async createTask(options: CreateTaskOptions): Promise<Task> {
         return this.request<Task>('POST', '/api/tasks', options);

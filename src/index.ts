@@ -33,6 +33,7 @@ export {
     AgentNameTakenError,
     TaskStateError,
     RatingWindowClosedError,
+    TaskLimitError,
     verifyWebhookSignature,
 } from './client.js';
 export type { FundingTokenSummary } from './client.js';
