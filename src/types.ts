@@ -111,6 +111,7 @@ export interface AgentProfile {
     id: string;
     name: string;
     clientId: string;
+    /** The agent's Proven badge (display only) — auto-earned at 10+ completed tasks with a low dispute rate. No monetary effect. */
     verified: boolean;
     tasksCreated: number;
     createdAt: string;
@@ -160,6 +161,7 @@ export interface CreateTaskOptions {
     reward: number;
     location: Location;
     category?: TaskCategory;
+    /** Hours until auto-expiry if unclaimed (0.5–720, default 24). Values >144 (6 days) require Established or Business owner-account standing. */
     expiresInHours?: number;
     tags?: string[];
     reviewCriteria?: ReviewCriteria;
