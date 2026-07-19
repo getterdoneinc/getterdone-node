@@ -1,0 +1,30 @@
+name: Dependency audit
+
+# Same gate as the main getterdone repo's CI (fail on high/critical CVEs).
+# The publish workflow runs this before publishing; this standalone run adds
+# a weekly sweep so CVEs disclosed between releases surface as failing runs,
+# not just Dependabot alerts.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Audit dependencies (fail on high/critical CVEs)
+        run: npm audit --audit-level=high

@@ -29,6 +29,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Same gate as the main getterdone repo's CI: a publish with known
+      # high/critical CVEs in the dependency tree must fail, not ship.
+      - name: Audit dependencies (fail on high/critical CVEs)
+        run: npm audit --audit-level=high
+
       - name: Run tests
         run: npm test
 
