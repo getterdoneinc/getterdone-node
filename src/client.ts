@@ -18,11 +18,13 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type {
+    AgentEventsPage,
     AgentMetrics,
     AgentProfile,
     ApproveTaskResult,
     Balance,
     CancelTaskResult,
+    FundingStatus,
     CreateTaskOptions,
     GetterDoneConfig,
     ListTasksOptions,
@@ -324,9 +326,19 @@ export class GetterDone {
 
     // ─── Agent ────────────────────────────────────────────────────────────────
 
-    /** Get current wallet balance and pending escrow. */
+    /** Get the legacy wallet balance (informational) and pending escrow. */
     async getBalance(): Promise<Balance> {
         return this.request<Balance>('GET', '/api/agents/balance');
+    }
+
+    /**
+     * Pre-flight readiness check before creating paid tasks. A resolved call proves
+     * credentials are valid; `ready: true` means the Agent Owner setup is complete
+     * (KYC + vaulted card + active funding token) and `createTask` will not fail with
+     * 402 NO_FUNDING_TOKEN. When not ready, surface `onboardingUrl` to the owner.
+     */
+    async getFundingStatus(): Promise<FundingStatus> {
+        return this.request<FundingStatus>('GET', '/api/agents/funding-status');
     }
 
     /**
@@ -363,6 +375,31 @@ export class GetterDone {
     /** Get the current webhook configuration. */
     async getWebhook(): Promise<WebhookConfig> {
         return this.request<WebhookConfig>('GET', '/api/agents/webhooks');
+    }
+
+    // ─── Event Inbox (RFC-001) ────────────────────────────────────────────────
+
+    /**
+     * Poll your durable event inbox. Omit `cursor` to resume from your last
+     * acked cursor (unacked events re-appear — dedupe on `event.id`). Process
+     * the batch, then call `ackEvents(page.nextCursor)`. Events are thin —
+     * fetch fresh task state with `getTask(event.subject.id)`.
+     */
+    async getEvents(opts: { cursor?: number; limit?: number; types?: string[] } = {}): Promise<AgentEventsPage> {
+        const params = new URLSearchParams();
+        if (opts.cursor !== undefined) params.set('cursor', String(opts.cursor));
+        if (opts.limit !== undefined) params.set('limit', String(opts.limit));
+        if (opts.types?.length) params.set('types', opts.types.join(','));
+        const qs = params.toString();
+        return this.request<AgentEventsPage>('GET', `/api/agents/events${qs ? `?${qs}` : ''}`);
+    }
+
+    /**
+     * Acknowledge events up to `cursor` (high-water mark): everything with
+     * seq ≤ cursor is consumed. Monotonic — acking backwards is a no-op.
+     */
+    async ackEvents(cursor: number): Promise<{ ackCursor: number }> {
+        return this.request<{ ackCursor: number }>('POST', '/api/agents/events/ack', { cursor });
     }
 
     // ─── Tasks ────────────────────────────────────────────────────────────────
@@ -413,7 +450,7 @@ export class GetterDone {
      * task is `'completed'` and `result.payout` for the `PayoutResult`
      * (`{ workerId, amount, currency }`).
      *
-     * If the first attempt returns 402 (insufficient balance or funding required),
+     * If the first attempt returns 402 (card charge declined or funding required),
      * the call is retried exactly once after a 1 000 ms delay — the operation is
      * idempotent so a double-submit is safe. If the retry also fails with 402, the
      * appropriate `InsufficientBalanceError` or `FundingRequiredError` is thrown.

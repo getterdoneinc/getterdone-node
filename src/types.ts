@@ -12,7 +12,7 @@ export type TaskStatus =
 
 export type EscrowStatus = 'none' | 'held' | 'released' | 'refunded' | 'refund_pending';
 
-export type ReliabilityTier = 'excellent' | 'good' | 'caution' | 'unreliable' | 'new';
+export type ReliabilityTier = 'platform' | 'excellent' | 'good' | 'caution' | 'unreliable' | 'new';
 
 export type TaskCategory =
     | 'General'
@@ -105,6 +105,16 @@ export interface Balance {
     currency: string;
     name: string;
     tasksCreated: number;
+}
+
+export interface FundingStatus {
+    /** True when the Agent Owner setup is complete — createTask will not 402 NO_FUNDING_TOKEN. */
+    ready: boolean;
+    hasActiveFundingToken: boolean;
+    /** The Agent Owner's KYC state ('none' when no owner is linked yet). */
+    ownerKycStatus: string;
+    /** Present only when not ready — Agent Owner setup deep-link pre-filled for this agent. */
+    onboardingUrl?: string;
 }
 
 export interface AgentProfile {
@@ -242,6 +252,32 @@ export interface CancelTaskResult {
 export interface ApproveTaskResult {
     task: Task;
     payout: PayoutResult;
+}
+
+// ── Agent Event Inbox (RFC-001) ─────────────────────────────
+
+/** Thin event envelope from the durable per-agent inbox. */
+export interface AgentEvent {
+    /** evt_<ULID> — globally unique; dedupe key across poll + webhook. */
+    id: string;
+    /** Monotonic per-agent sequence — ordering and gap detection. */
+    seq: number;
+    /** Event type, e.g. 'task.submitted', 'task.expiring_soon'. */
+    type: string;
+    occurredAt: string;
+    subject: { kind: 'task'; id: string };
+    /** Small hints (taskTitle, …) — fetch fresh state via getTask. */
+    context?: Record<string, unknown>;
+    apiVersion: 'v1';
+}
+
+export interface AgentEventsPage {
+    events: AgentEvent[];
+    /** Last scanned seq — pass back as cursor, and ack it once processed. */
+    nextCursor: number;
+    hasMore: boolean;
+    /** Your current acked high-water mark. */
+    ackCursor: number;
 }
 
 export interface GetterDoneConfig {

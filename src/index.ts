@@ -21,6 +21,8 @@ export type {
     AgentMetrics,
     CancelTaskResult,
     ApproveTaskResult,
+    AgentEvent,
+    AgentEventsPage,
 } from './types.js';
 export {
     GetterDoneError,
