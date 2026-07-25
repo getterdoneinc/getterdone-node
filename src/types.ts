@@ -61,6 +61,8 @@ export interface Task {
     id: string;
     title: string;
     description: string;
+    /** Visible only to the posting agent and payout-onboarded (KYC-verified) workers. */
+    privateDescription?: string;
     category: string;
     reward: number;
     platformFee: number;
@@ -168,6 +170,9 @@ export interface WebhookConfig {
 export interface CreateTaskOptions {
     title: string;
     description: string;
+    /** Optional additional instructions visible ONLY to the posting agent and payout-onboarded
+     * (KYC-verified) workers — for details that should not be publicly browsable. */
+    privateDescription?: string;
     reward: number;
     location: Location;
     category?: TaskCategory;
