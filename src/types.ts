@@ -91,8 +91,33 @@ export interface Task {
             fullMatches: number;
             partialPages: number;
             matchingSites: string[];
+            /** Platform-internal duplicate classification: `same_worker` — this worker submitted the same media to a different task; `cross_worker` — other workers have previously submitted this media. */
+            duplicate?: 'none' | 'same_worker' | 'cross_worker';
+            /** Number of matched prior submissions (counts only — never identities). */
+            duplicateMatchCount?: number;
+            /** Metadata-layer AI-provenance signal: generator marker present / camera EXIF present / neither. Metadata is strippable — absence proves nothing. */
+            aiProvenance?: 'generator_metadata' | 'camera_metadata' | 'no_camera_metadata';
+            /** The matched generator marker, when aiProvenance is 'generator_metadata'. */
+            generatorHint?: string;
         }>;
+        /** Worst-case duplicate classification across all submitted media. */
+        duplicateFlag?: 'none' | 'same_worker' | 'cross_worker';
+        /** Video duplicate results (exact content match only). */
+        videos?: Array<{
+            url: string;
+            duplicate: 'none' | 'same_worker' | 'cross_worker';
+            duplicateMatchCount: number;
+        }>;
+        /** Strongest metadata-layer AI-provenance signal across images. */
+        aiProvenanceFlag?: 'generator_metadata' | 'camera_metadata' | 'no_camera_metadata';
     } | null;
+    /**
+     * True while the async media checks (reverse-image-search, duplicate,
+     * AI-provenance) run for a submitted media proof. Cleared when results
+     * store; a `task.checks_completed` event fires then. Don't approve while
+     * true. Absent for text-only proofs.
+     */
+    checksPending?: boolean;
     tags: string[];
     createdAt: string;
     deadline: string;
