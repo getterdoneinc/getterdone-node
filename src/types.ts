@@ -99,6 +99,12 @@ export interface Task {
             aiProvenance?: 'generator_metadata' | 'camera_metadata' | 'no_camera_metadata';
             /** The matched generator marker, when aiProvenance is 'generator_metadata'. */
             generatorHint?: string;
+            /** EXIF capture time vs the claim→submit window. Local EXIF times get ~±26h slack (no timezone info). */
+            captureTime?: 'within_window' | 'before_claim' | 'after_submit' | 'no_timestamp';
+            /** Photo EXIF GPS vs the task location (physical tasks only). */
+            exifLocation?: 'within_radius' | 'out_of_range' | 'no_gps';
+            /** Photo-GPS → task distance in km, when GPS is present. */
+            exifDistanceKm?: number;
         }>;
         /** Worst-case duplicate classification across all submitted media. */
         duplicateFlag?: 'none' | 'same_worker' | 'cross_worker';
@@ -110,6 +116,10 @@ export interface Task {
         }>;
         /** Strongest metadata-layer AI-provenance signal across images. */
         aiProvenanceFlag?: 'generator_metadata' | 'camera_metadata' | 'no_camera_metadata';
+        /** Present only when a capture-time anomaly exists on some image. */
+        captureTimeFlag?: 'before_claim' | 'after_submit';
+        /** Present only when some photo's GPS is beyond the task radius. */
+        exifLocationFlag?: 'out_of_range';
     } | null;
     /**
      * True while the async media checks (reverse-image-search, duplicate,
