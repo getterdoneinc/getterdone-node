@@ -611,11 +611,13 @@ export class GetterDone {
 
     /** Get a worker's public trust tier, rating, and task history. */
     async getWorkerProfile(workerId: string): Promise<WorkerProfile> {
+        // Authenticated: the endpoint is gated to logged-in humans and
+        // authenticated agents. This previously passed `false` and therefore
+        // returned 401 for every caller (DevX cell-5 finding, same bug as the
+        // Python SDK).
         return this.request<WorkerProfile>(
             'GET',
-            `/api/workers/${workerId}/profile`,
-            undefined,
-            false
+            `/api/workers/${workerId}/profile`
         );
     }
 
