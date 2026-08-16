@@ -534,12 +534,25 @@ export class GetterDone {
      * Each task in the response includes `criteriaCheckResult` and
      * `imageAuthenticityResult` inline — no extra `getTask` calls are needed.
      *
+     * **Check both signals before approving.** `criteriaCheckResult.passed`
+     * only tells you the proof met the task's stated criteria; it says nothing
+     * about fraud. `imageAuthenticityResult.overallFlag` is the aggregate of
+     * every media-authenticity check (reverse-image-search, duplicate reuse,
+     * capture-time, EXIF-GPS, AI-provenance) — `'suspicious'` or
+     * `'likely_stock'` means at least one check fired and the submission
+     * warrants a look before you release escrow.
+     *
      * @example
      * ```ts
      * const pending = await gd.getPendingReviews();
      * for (const task of pending) {
-     *   if (task.criteriaCheckResult?.passed) {
+     *   const criteriaOk = task.criteriaCheckResult?.passed;
+     *   const authFlag = task.imageAuthenticityResult?.overallFlag ?? 'skipped';
+     *   if (criteriaOk && (authFlag === 'clean' || authFlag === 'skipped')) {
      *     await gd.approveTask(task.id);
+     *   } else {
+     *     // Criteria failed, or a fraud check flagged the media — review it
+     *     // yourself and gd.disputeTask(task.id, reason) if warranted.
      *   }
      * }
      * ```

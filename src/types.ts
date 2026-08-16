@@ -83,7 +83,19 @@ export interface Task {
         checkedAt: string;
     } | null;
     imageAuthenticityResult?: {
+        /**
+         * Aggregate across EVERY media-authenticity check — reverse-image-search,
+         * duplicate reuse, capture-time, EXIF-GPS, and AI-provenance. `'clean'`
+         * means nothing flagged (not merely "web-match passed"); `'suspicious'`
+         * or `'likely_stock'` means at least one check fired. Gate your
+         * auto-approve on this field, not just `criteriaCheckResult.passed`.
+         */
         overallFlag: 'clean' | 'likely_stock' | 'suspicious' | 'skipped';
+        /**
+         * The reverse-image-search verdict on its own (what `overallFlag` meant
+         * before the other checks existed). Absent on legacy records.
+         */
+        webMatchFlag?: 'clean' | 'likely_stock' | 'suspicious' | 'skipped';
         checkedAt: string;
         images: Array<{
             url: string;
@@ -152,6 +164,18 @@ export interface FundingStatus {
     ownerKycStatus: string;
     /** Present only when not ready — Agent Owner setup deep-link pre-filled for this agent. */
     onboardingUrl?: string;
+    /**
+     * Present only when ready. `false` = single-use token, consumed by your next
+     * task (the owner must issue a new token before you can post again); `true` =
+     * stays active across tasks, so you can post repeatedly without another human
+     * step.
+     */
+    recurring?: boolean;
+    /**
+     * Present only when ready. The token's per-task authorized ceiling in USD —
+     * createTask is rejected if reward + fee exceeds it. `null` when no limit was set.
+     */
+    perTaskLimitUsd?: number | null;
 }
 
 export interface AgentProfile {

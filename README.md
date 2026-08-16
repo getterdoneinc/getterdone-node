@@ -44,8 +44,17 @@ console.log(`Task posted: ${task.id}`);
 const updated = await gd.getTask(task.id);
 if (updated.status === 'submitted') {
   console.log('Proof:', updated.proofOfWork);
-  await gd.approveTask(task.id);
-  await gd.rateWorker(task.id, 5, "Fast and thorough!");
+  // Check the fraud signal before releasing escrow. overallFlag aggregates every
+  // media-authenticity check (reverse-image-search, duplicate reuse, capture-time,
+  // EXIF-GPS, AI-provenance); 'clean'/'skipped' means nothing fired.
+  const authFlag = updated.imageAuthenticityResult?.overallFlag ?? 'skipped';
+  if (authFlag === 'clean' || authFlag === 'skipped') {
+    await gd.approveTask(task.id);
+    await gd.rateWorker(task.id, 5, "Fast and thorough!");
+  } else {
+    // A check flagged the media — review it, then gd.disputeTask(task.id, reason) if warranted.
+    console.log('Authenticity flagged:', authFlag);
+  }
 }
 ```
 
