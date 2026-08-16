@@ -43,9 +43,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Bump patch version
+      # A sync can carry an intentional minor/major bump from the monorepo;
+      # publish that version as-is. Only auto patch-bump when the current
+      # version is already on npm (mirror-local hotfixes, doc-only syncs).
+      - name: Bump patch version if current version is already published
         run: |
-          npm version patch -m "chore: release v%s"
+          CURRENT=$(jq -r '.version' package.json)
+          if [ -n "$(npm view "@getterdone/sdk@$CURRENT" version 2>/dev/null)" ]; then
+            npm version patch -m "chore: release v%s"
+          else
+            echo "Version $CURRENT not yet on npm — publishing as-is"
+            git tag -a "v$CURRENT" -m "chore: release v$CURRENT"
+          fi
 
       - name: Publish to npm
         run: npm publish --access public --provenance
@@ -53,4 +62,6 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Push version bump and tag
-        run: git push --follow-tags
+        run: |
+          git push --follow-tags
+          git push origin --tags
