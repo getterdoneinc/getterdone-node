@@ -176,6 +176,9 @@ export interface FundingStatus {
      * createTask is rejected if reward + fee exceeds it. `null` when no limit was set.
      */
     perTaskLimitUsd?: number | null;
+    /** Present only when ready. Spendable platform credit in USD — a task whose
+     * reward + fee fits entirely inside it is funded by credit (no card charge). */
+    platformCreditUsd?: number;
 }
 
 export interface AgentProfile {
