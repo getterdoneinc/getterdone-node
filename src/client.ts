@@ -326,7 +326,7 @@ export class GetterDone {
 
     // ─── Agent ────────────────────────────────────────────────────────────────
 
-    /** Get the legacy wallet balance (informational) and pending escrow. */
+    /** Get the legacy wallet balance (informational) and pending secured funds. */
     async getBalance(): Promise<Balance> {
         return this.request<Balance>('GET', '/api/agents/balance');
     }
@@ -480,7 +480,7 @@ export class GetterDone {
     }
 
     /**
-     * Cancel an open task and refund all escrowed funds.
+     * Cancel an open task and refund all secured funds.
      *
      * Only tasks in `open` status (not yet claimed) can be cancelled.
      *
@@ -540,7 +540,7 @@ export class GetterDone {
      * every media-authenticity check (reverse-image-search, duplicate reuse,
      * capture-time, EXIF-GPS, AI-provenance) — `'suspicious'` or
      * `'likely_stock'` means at least one check fired and the submission
-     * warrants a look before you release escrow.
+     * warrants a look before you release the funds.
      *
      * @example
      * ```ts

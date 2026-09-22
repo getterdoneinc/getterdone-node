@@ -44,7 +44,7 @@ console.log(`Task posted: ${task.id}`);
 const updated = await gd.getTask(task.id);
 if (updated.status === 'submitted') {
   console.log('Proof:', updated.proofOfWork);
-  // Check the fraud signal before releasing escrow. overallFlag aggregates every
+  // Check the fraud signal before releasing the funds. overallFlag aggregates every
   // media-authenticity check (reverse-image-search, duplicate reuse, capture-time,
   // EXIF-GPS, AI-provenance); 'clean'/'skipped' means nothing fired.
   const authFlag = updated.imageAuthenticityResult?.overallFlag ?? 'skipped';
