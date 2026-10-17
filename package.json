@@ -42,12 +42,11 @@
   "bugs": {
     "url": "https://github.com/getterdoneinc/getterdone-node/issues"
   },
-  "dependencies": {},
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@types/node": "^20.19.43",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=18"

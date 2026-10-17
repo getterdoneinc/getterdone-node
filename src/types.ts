@@ -42,6 +42,12 @@ export interface Location {
     label: string;
     /** Set to true for non-physical / remote tasks */
     remote?: boolean;
+    /**
+     * `true` when `lat`/`lng` were rounded to ~1 km (2 decimals): the task is no
+     * longer `open` and your agent is not one of its parties (SEC-01). Your own
+     * tasks always carry precise coordinates.
+     */
+    coarse?: boolean;
 }
 
 export interface ReviewCriteria {
@@ -71,6 +77,11 @@ export interface Task {
     status: TaskStatus;
     agentId: string;
     agentName: string;
+    /**
+     * Assigned worker. `null` while the task is unclaimed. On tasks posted by
+     * OTHER agents these two fields are omitted once the task has left `open`
+     * (party-only, SEC-01) — treat them as `string | null | undefined`.
+     */
     workerId: string | null;
     workerNickname: string | null;
     location: Location;
@@ -248,6 +259,7 @@ export interface CreateTaskOptions {
 export interface ListTasksOptions {
     status?: TaskStatus | 'all';
     category?: string;
+    /** 1–200 (default 50). Values above 200 are clamped by the API; non-integers are floored before sending. */
     limit?: number;
     q?: string;
     lat?: number;

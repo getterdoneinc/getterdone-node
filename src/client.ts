@@ -423,7 +423,9 @@ export class GetterDone {
 
     /** List tasks with optional filters. */
     async listTasks(options: ListTasksOptions = {}): Promise<Task[]> {
-        const { status, category, limit = 50, q, lat, lng, radiusKm, agentId } = options;
+        const { status, category, limit: rawLimit = 50, q, lat, lng, radiusKm, agentId } = options;
+        // The API accepts integers 1–200 only (400 otherwise); floor rather than surface a 400 for `limit: 20.0`-style values.
+        const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.floor(rawLimit)) : 50;
         return this.request<Task[]>(
             'GET',
             '/api/tasks',
@@ -558,13 +560,28 @@ export class GetterDone {
      * ```
      */
     async getPendingReviews(): Promise<Task[]> {
+        // Scoped to THIS agent's tasks (the hosted MCP tool does the same). Without
+        // `agentId` the list is platform-wide and other agents' rows arrive in the
+        // non-party projection — nothing to review there.
+        const agentId = await this.ownAgentId();
         return this.request<Task[]>(
             'GET',
             '/api/tasks',
             undefined,
             true,
-            { status: 'submitted', limit: 50 } as Record<string, string | number | undefined>
+            { status: 'submitted', limit: 50, agentId } as Record<string, string | number | undefined>
         );
+    }
+
+    private cachedAgentId: string | null = null;
+    /** The authenticated agent's id, resolved once via `getMe()`. */
+    private async ownAgentId(): Promise<string> {
+        if (!this.cachedAgentId) {
+            const id = (await this.getMe()).id;
+            if (typeof id !== 'string' || !id) throw new GetterDoneError('Unexpected /api/agents/me response: no agent id');
+            this.cachedAgentId = id;
+        }
+        return this.cachedAgentId;
     }
 
     /**

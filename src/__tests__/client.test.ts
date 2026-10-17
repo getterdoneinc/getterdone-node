@@ -356,8 +356,9 @@ describe('GetterDone.getPendingReviews()', () => {
     });
 
     it('GETs /api/tasks with status=submitted&limit=50', async () => {
-        // call [0]: token exchange, call [1]: getPendingReviews
+        // call [0]: token exchange, call [1]: /api/agents/me (scope), call [2]: getPendingReviews
         fetchMock.mockResolvedValueOnce(makeTokenResponse());
+        fetchMock.mockResolvedValueOnce(makeResponse({ data: { id: 'agent-me', name: 'Me' } }));
         fetchMock.mockResolvedValueOnce(
             makeResponse({
                 data: [{ id: 't1', status: 'submitted', title: 'Task 1' }],
@@ -366,27 +367,30 @@ describe('GetterDone.getPendingReviews()', () => {
 
         const result = await gd.getPendingReviews();
 
-        const [url] = fetchMock.mock.calls[1] as [string, ...unknown[]];
+        const [url] = fetchMock.mock.calls[2] as [string, ...unknown[]];
         expect(url).toContain('/api/tasks');
         expect(url).toContain('status=submitted');
         expect(url).toContain('limit=50');
+        expect(url).toContain('agentId=agent-me');
         expect(result).toHaveLength(1);
         expect(result[0].id).toBe('t1');
     });
 
     it('sends an Authorization header (authenticated=true)', async () => {
         fetchMock.mockResolvedValueOnce(makeTokenResponse());
+        fetchMock.mockResolvedValueOnce(makeResponse({ data: { id: 'agent-me' } }));
         fetchMock.mockResolvedValueOnce(makeResponse({ data: [] }));
 
         await gd.getPendingReviews();
 
-        const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+        const [, init] = fetchMock.mock.calls[2] as [string, RequestInit];
         const headers = init.headers as Record<string, string>;
         expect(headers['Authorization']).toBe('Bearer test-token');
     });
 
     it('returns an empty array when no submitted tasks exist', async () => {
         fetchMock.mockResolvedValueOnce(makeTokenResponse());
+        fetchMock.mockResolvedValueOnce(makeResponse({ data: { id: 'agent-me' } }));
         fetchMock.mockResolvedValueOnce(makeResponse({ data: [] }));
 
         const result = await gd.getPendingReviews();
@@ -828,5 +832,66 @@ describe('GetterDone — 402 routing', () => {
 
         expect(caught).toBeInstanceOf(InsufficientBalanceError);
         expect((caught as InsufficientBalanceError).fundingToken).toBeUndefined();
+    });
+});
+
+// ─── getPendingReviews scoping + limit flooring (SEC-01 follow-up, QA ISSUE-038) ──
+
+describe('GetterDone.getPendingReviews() is scoped to the calling agent', () => {
+    let gd: GetterDone;
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+        fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        gd = new GetterDone({ apiKey: 'gd_testid:testsecret', baseUrl: 'https://test.example' });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('resolves the agent id once via /api/agents/me and sends it as agentId', async () => {
+        fetchMock.mockResolvedValueOnce(makeTokenResponse());                    // token
+        fetchMock.mockResolvedValueOnce(makeResponse({ data: { id: 'agent-me', name: 'Me' } })); // getMe
+        fetchMock.mockResolvedValueOnce(makeResponse({ data: [] }));             // list
+        fetchMock.mockResolvedValueOnce(makeResponse({ data: [] }));             // second list — no second getMe
+
+        await gd.getPendingReviews();
+        await gd.getPendingReviews();
+
+        const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+        expect(urls[1]).toBe('https://test.example/api/agents/me');
+        const first = new URL(urls[2]);
+        expect(first.pathname).toBe('/api/tasks');
+        expect(first.searchParams.get('status')).toBe('submitted');
+        expect(first.searchParams.get('limit')).toBe('50');
+        expect(first.searchParams.get('agentId')).toBe('agent-me');
+        expect(urls[3]).toBe(urls[2]);
+        expect(urls.filter((u) => u.endsWith('/api/agents/me'))).toHaveLength(1);
+    });
+
+    it('listTasks floors a fractional limit and never sends 0', async () => {
+        fetchMock.mockResolvedValueOnce(makeTokenResponse());
+        fetchMock.mockResolvedValueOnce(makeResponse({ data: [] }));
+        await gd.listTasks({ limit: 20.7 });
+        expect(new URL(String(fetchMock.mock.calls[1][0])).searchParams.get('limit')).toBe('20');
+
+        fetchMock.mockResolvedValueOnce(makeResponse({ data: [] }));
+        await gd.listTasks({ limit: 0.4 });
+        expect(new URL(String(fetchMock.mock.calls[2][0])).searchParams.get('limit')).toBe('1');
+    });
+});
+
+describe('GetterDone.getPendingReviews() refuses to run unscoped', () => {
+    it('throws GetterDoneError when /api/agents/me has no id (never caches undefined)', async () => {
+        const fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        const gd = new GetterDone({ apiKey: 'gd_testid:testsecret', baseUrl: 'https://test.example' });
+        fetchMock.mockResolvedValueOnce(makeTokenResponse());
+        fetchMock.mockResolvedValueOnce(makeResponse({ data: { name: 'no id here' } }));
+        await expect(gd.getPendingReviews()).rejects.toThrow(GetterDoneError);
+        expect(fetchMock.mock.calls.map((c) => String(c[0])).some((u) => u.includes('/api/tasks'))).toBe(false);
+        vi.unstubAllGlobals();
     });
 });
