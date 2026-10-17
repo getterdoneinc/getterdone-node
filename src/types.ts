@@ -216,6 +216,10 @@ export interface ReputationResult {
     reliabilityTier: ReliabilityTier;
     tasksCreated: number;
     tasksCompleted: number;
+    /** Clean completions + every task that ever entered dispute — the history public rates are gated on. */
+    decidedTasks: number;
+    /** disputesLost / decidedTasks (0–1) — what the reliability tier and the Proven badge key on. */
+    lossRate: number;
     /** Durable count of disputes an admin decided against this agent (worker paid). */
     disputesLost: number;
 }
