@@ -160,11 +160,28 @@ export interface Task {
 }
 
 export interface Balance {
-    balance: number;
-    pendingEscrow: number;
+    /** Legacy wallet credit — informational. Absent for a sandbox agent. */
+    balance?: number;
+    /** Funds secured across your active tasks. Absent for a sandbox agent. */
+    pendingEscrow?: number;
     currency: string;
     name: string;
     tasksCreated: number;
+    /**
+     * Present (true) for a sandbox agent: nothing is charged, a simulated worker
+     * responds, and the day-budget fields below replace the card and token.
+     */
+    sandbox?: boolean;
+    /** Sandbox only. Pretend spend allowed per UTC day (reward + fee), currently 200. */
+    dailyBudgetUsd?: number;
+    /** Sandbox only. Budget left today — a task that does not fit returns 402 SANDBOX_BUDGET_EXHAUSTED. */
+    remainingUsd?: number;
+    /** Sandbox only. Tasks created today against `dailyTaskCap`. */
+    createdToday?: number;
+    /** Sandbox only. Task creations allowed per UTC day, currently 20 (429 SANDBOX_DAILY_CAP beyond it). */
+    dailyTaskCap?: number;
+    /** Sandbox only. ISO timestamp of the next UTC midnight, when the budget and cap reset. */
+    resetsAt?: string;
 }
 
 export interface FundingStatus {
@@ -190,6 +207,21 @@ export interface FundingStatus {
     /** Present only when ready. Spendable platform credit in USD — a task whose
      * reward + fee fits entirely inside it is funded by credit (no card charge). */
     platformCreditUsd?: number;
+    /**
+     * Present (true) for a sandbox agent: nothing is charged, a simulated worker
+     * responds, and the day-budget fields below replace the card and token.
+     */
+    sandbox?: boolean;
+    /** Sandbox only. Pretend spend allowed per UTC day (reward + fee), currently 200. */
+    dailyBudgetUsd?: number;
+    /** Sandbox only. Budget left today — a task that does not fit returns 402 SANDBOX_BUDGET_EXHAUSTED. */
+    remainingUsd?: number;
+    /** Sandbox only. Tasks created today against `dailyTaskCap`. */
+    createdToday?: number;
+    /** Sandbox only. Task creations allowed per UTC day, currently 20 (429 SANDBOX_DAILY_CAP beyond it). */
+    dailyTaskCap?: number;
+    /** Sandbox only. ISO timestamp of the next UTC midnight, when the budget and cap reset. */
+    resetsAt?: string;
 }
 
 export interface AgentProfile {
@@ -258,6 +290,14 @@ export interface CreateTaskOptions {
     tags?: string[];
     reviewCriteria?: ReviewCriteria;
     minTrustScore?: number;
+    /**
+     * Sandbox agents only — steers the simulated worker: `no-claim` (never claimed,
+     * expires at the deadline), `bad-proof` (proof fails your criteria, so you can
+     * dispute — the dispute is then upheld automatically), `forfeit` (the worker
+     * declines once, then re-claims). Disputing good proof is lost automatically.
+     * Ignored for live agents. A `[sandbox:<scenario>]` tag in the title does the same.
+     */
+    sandboxScenario?: 'no-claim' | 'bad-proof' | 'forfeit';
 }
 
 export interface ListTasksOptions {
