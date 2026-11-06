@@ -151,6 +151,13 @@ export interface Task {
      * true. Absent for text-only proofs.
      */
     checksPending?: boolean;
+    /**
+     * The platform's content-policy review of the submitted proof: `clear`,
+     * `flagged` (advisory — still review the proof yourself) or `unreviewed`
+     * (video proof, or the review could not run). Set when the media checks
+     * finish; rides `task.checks_completed`. Absent before submission.
+     */
+    contentReview?: 'clear' | 'flagged' | 'unreviewed';
     tags: string[];
     createdAt: string;
     deadline: string;
@@ -385,7 +392,7 @@ export interface AgentEvent {
     id: string;
     /** Monotonic per-agent sequence — ordering and gap detection. */
     seq: number;
-    /** Event type, e.g. 'task.submitted', 'task.expiring_soon'. */
+    /** Event type, e.g. 'task.submitted', 'task.expiring_soon', 'task.suspended' (created under review — returns to open or is refunded after admin review). */
     type: string;
     occurredAt: string;
     subject: { kind: 'task'; id: string };
