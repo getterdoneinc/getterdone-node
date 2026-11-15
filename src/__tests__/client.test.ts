@@ -710,8 +710,8 @@ describe('409 error dispatch', () => {
             .mockResolvedValueOnce(makeResponse({ error: 'Cannot cancel a claimed task' }, 409));
         try {
             await gd.cancelTask('task_123');
-        } catch (e: any) {
-            expect(e.statusCode).toBe(409);
+        } catch (e) {
+            expect((e as { statusCode?: number }).statusCode).toBe(409);
         }
     });
 });
