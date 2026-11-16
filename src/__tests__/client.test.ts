@@ -895,3 +895,55 @@ describe('GetterDone.getPendingReviews() refuses to run unscoped', () => {
         vi.unstubAllGlobals();
     });
 });
+
+// ─── createTask hiddenFrom (per-task worker deny list) ───────────────────────
+
+describe('GetterDone.createTask() hiddenFrom', () => {
+    let gd: GetterDone;
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+        fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+        gd = new GetterDone({ apiKey: 'gd_testid:testsecret', baseUrl: 'https://test.example' });
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('forwards hiddenFrom verbatim in the POST /api/tasks body', async () => {
+        fetchMock
+            .mockResolvedValueOnce(makeTokenResponse())
+            .mockResolvedValueOnce(makeResponse({ data: { id: 't1', status: 'open' } }, 201));
+
+        await gd.createTask({
+            title: 'A valid task title',
+            description: 'A description that is comfortably over twenty characters.',
+            reward: 5,
+            location: { lat: 0, lng: 0, label: 'Remote', remote: true },
+            hiddenFrom: ['maria_k', 'test-1b0befc3-3e23-4d44-9925-4f5abba236c8'],
+        });
+
+        const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+        expect(url).toBe('https://test.example/api/tasks');
+        const body = JSON.parse(String(init.body)) as { hiddenFrom?: string[] };
+        expect(body.hiddenFrom).toEqual(['maria_k', 'test-1b0befc3-3e23-4d44-9925-4f5abba236c8']);
+    });
+
+    it('surfaces a 400 UNKNOWN_WORKER as a GetterDoneError carrying the code', async () => {
+        fetchMock
+            .mockResolvedValueOnce(makeTokenResponse())
+            .mockResolvedValueOnce(makeResponse({ success: false, error: 'hiddenFrom: unknown worker "nobody"', code: 'UNKNOWN_WORKER', unknownWorkers: ['nobody'] }, 400));
+
+        let thrown: unknown;
+        try {
+            await gd.createTask({
+                title: 'A valid task title',
+                description: 'A description that is comfortably over twenty characters.',
+                reward: 5,
+                location: { lat: 0, lng: 0, label: 'Remote', remote: true },
+                hiddenFrom: ['nobody'],
+            });
+        } catch (e) { thrown = e; }
+        expect(thrown).toBeInstanceOf(GetterDoneError);
+        expect((thrown as GetterDoneError).statusCode).toBe(400);
+    });
+});

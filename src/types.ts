@@ -298,6 +298,15 @@ export interface CreateTaskOptions {
     reviewCriteria?: ReviewCriteria;
     minTrustScore?: number;
     /**
+     * Workers to exclude from this task, by exact nickname or worker id (max 200): the task
+     * is not shown on their board, they cannot claim it, and they are not notified. Resolved at
+     * creation — an entry matching no worker rejects the whole call with `400 UNKNOWN_WORKER`
+     * (the error body's `unknownWorkers` names them), so a typo never silently un-hides someone.
+     * Never returned in any task response. Typical use: re-posting a once-per-person task and
+     * excluding the people who already earned it.
+     */
+    hiddenFrom?: string[];
+    /**
      * Sandbox agents only — steers the simulated worker: `no-claim` (never claimed,
      * expires at the deadline), `bad-proof` (proof fails your criteria, so you can
      * dispute — the dispute is then upheld automatically), `forfeit` (the worker
